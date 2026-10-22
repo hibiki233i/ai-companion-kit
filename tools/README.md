@@ -33,6 +33,7 @@
 |---|---|
 | `安装.command` | 装 Node 便携版（缺或太旧时）→ 准备 qq-bridge → 装依赖 → 生成 NapCat 模式的 config.json → 打开文本编辑填值 |
 | `启动.command` | 按 config.json 的端口检查 NapCat / DSH → 启动 qq-bridge 守护（不用复制进 qq-bridge 目录） |
+| `配置.command` | 浏览器里改 qq-bridge 的连接配置（网关地址 / token、DSH、白名单），能当场测试连接 |
 | `写日记.command` / `看日记.command` | 同 Windows 版 |
 | `install-node.sh` | 单独下 Node 便携版到 `tools/_runtime/node` |
 

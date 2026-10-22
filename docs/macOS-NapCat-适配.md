@@ -86,6 +86,13 @@ openssl rand -hex 16
 
 ## 四、qq-bridge 的 `config.json` 怎么填
 
+**最省事的办法：双击 `tools/配置.command`**（或者在 qq-bridge 目录下运行 `npm run config`）。它会在浏览器里打开一个配置页，下面这些字段都能直接填：
+- 有「测试连接」按钮，能看出 HTTP / WebSocket 通不通、token 对不对、网关是不是 NapCat、登录的是哪个号。
+- 会按你填的端口和 token 生成 NapCat 网络配置片段，复制过去就行。
+- 不用先启动桥接；只改这几项，其余字段原样保留；保存前会备份成 `config.json.bak`。
+
+想手改的话，对照下面：
+
 `tools/安装.command` 新建的 config.json 已经设好了 `impl` 和 `followDiscoveredEndpoint`，你只需要填下表里标"要填"的项。
 
 **配置块的名字还叫 `snowluma`，不用改。** 桥接代码就是按这个名字读的，接 NapCat 也一样。
@@ -183,6 +190,7 @@ npm run phone:test
 | `tools/安装.bat` | `tools/安装.command` | 装 Node（便携版）、qq-bridge、依赖，生成 NapCat 模式的 config.json |
 | `tools/install-node.ps1` | `tools/install-node.sh` | 单独下载便携版 Node |
 | `tools/启动.bat` | `tools/启动.command` | 检查前置并启动。不用复制进 qq-bridge 目录，它会自己找 |
+| — | `tools/配置.command` | 打开连接配置页（网关 / DSH / 白名单 + 测试连接）；Windows 上用 `npm run config` |
 | `tools/写日记.bat` | `tools/写日记.command` | 她自己写一篇；`./写日记.command 手动` 是你自己写 |
 | `tools/看日记.bat` | `tools/看日记.command` | 看最近 5 篇和统计 |
 | `packages/qzone/开通.bat` | `packages/qzone/开通.command` | 开通发说说 |
