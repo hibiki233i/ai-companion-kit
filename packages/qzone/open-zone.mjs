@@ -209,6 +209,13 @@ async function probe() {
     const txt = await res.text();
     let data = null;
     try { data = JSON.parse(txt); } catch {}
+    if (data?.retcode === 1404) {
+      // NapCat / LuckyLillia 等：没有「读说说」接口（OneBot 1404 = 不支持的 API），但 NapCat 能发说说
+      console.log('⚠️  网关连上了，但它不支持读说说（retcode 1404，NapCat 就是这样）');
+      console.log('   → NapCat 下只有 qzone_post（发说说）能用；看动态/点赞/评论会直接报「网关不支持」');
+      console.log('   → 发说说能不能用，开通后让她发一条试试最准');
+      return true;
+    }
     if (!res.ok || !data || data.status !== 'ok') {
       console.log(`❌ OneBot 有响应但拒绝了：HTTP ${res.status}`);
       console.log('   → 网关版本太老？在 SnowLuma 里开一次「QQ 空间」相关动作试试');
@@ -220,7 +227,7 @@ async function probe() {
   } catch (e) {
     const msg = e?.name === 'TimeoutError' ? '15 秒没响应' : (e?.cause?.code || e?.message || String(e));
     console.log(`❌ 连不上 ${SNOW_HTTP}（${msg}）`);
-    console.log('   → 网关没起？端口不是 3000？先把 SnowLuma 跑起来');
+    console.log('   → 网关没起？端口不是 3000？先把 SnowLuma / NapCat 跑起来（端口不同就设 SNOWLUMA_HTTP_URL）');
     return false;
   }
 }

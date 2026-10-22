@@ -2,11 +2,12 @@
 // 一键自检：她自己的生活（own-life）装没装好、今天动没动
 // 用法：node scripts/check-own-life.mjs [--bridge <bridge 目录>]
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const argv = process.argv.slice(2);
 const bi = argv.indexOf('--bridge');
-const BRIDGE = bi >= 0 ? argv[bi + 1] : (process.env.BRIDGE_DIR || 'E:\\qq-bridge');
+const BRIDGE = bi >= 0 ? argv[bi + 1] : (process.env.BRIDGE_DIR || (process.platform === 'win32' ? 'E:\\qq-bridge' : path.join(os.homedir(), 'qq-bridge')));
 const SRC = path.join(BRIDGE, 'src');
 const rows = [];
 const add = (name, ok, detail, fix) => rows.push({ name, ok, detail, fix });

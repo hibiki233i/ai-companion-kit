@@ -25,3 +25,15 @@
 
 - **"没找到 Node.js"** → 去 nodejs.org 下 LTS 版，装完**重启电脑**
 - **npm install 报红** → 脚本会问你要不要换国内镜像，选 Y
+## macOS / Linux
+
+同样的事，换成 `.command`（Finder 里双击会开一个终端窗口跑）：
+
+| 文件 | 干什么 |
+|---|---|
+| `安装.command` | 装 Node 便携版（缺或太旧时）→ 准备 qq-bridge → 装依赖 → 生成 NapCat 模式的 config.json → 打开文本编辑填值 |
+| `启动.command` | 按 config.json 的端口检查 NapCat / DSH → 启动 qq-bridge 守护（不用复制进 qq-bridge 目录） |
+| `写日记.command` / `看日记.command` | 同 Windows 版 |
+| `install-node.sh` | 单独下 Node 便携版到 `tools/_runtime/node` |
+
+Mac 上没有 SnowLuma，QQ 网关用 NapCat。完整步骤和 config 怎么填：[macOS + NapCat 适配](../docs/macOS-NapCat-适配.md)。

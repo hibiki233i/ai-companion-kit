@@ -4,3 +4,6 @@
 # -text = 不做任何换行转换，存进去什么样、拿出来就什么样。
 *.bat -text
 *.cmd -text
+# ★macOS / Linux 脚本必须是 LF★（CRLF 会让 bash 报 $'\r': command not found）
+*.sh text eol=lf
+*.command text eol=lf

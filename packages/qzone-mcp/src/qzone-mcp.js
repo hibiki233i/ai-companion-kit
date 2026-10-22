@@ -109,6 +109,10 @@ async function snowluma(action, payload) {
   const txt = await res.text();
   let data = null;
   try { data = JSON.parse(txt); } catch {}
+  if (data?.retcode === 1404) {
+    // OneBot 约定 1404 = 网关没有这个 API。NapCat 只实现了 send_qzone_msg，读说说/点赞/评论都会落到这里
+    throw new Error(`当前 QQ 网关不支持 ${action}（只有 SnowLuma 有完整的空间接口；NapCat 下只能用 qzone_post 发说说）`);
+  }
   if (!res.ok || !data || data.status !== 'ok') {
     throw new Error(`${action} 失败：HTTP ${res.status} ${txt.slice(0, 260)}`);
   }

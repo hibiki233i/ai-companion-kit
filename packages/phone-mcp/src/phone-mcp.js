@@ -41,7 +41,8 @@ function findAdb() {
     cands.push('C:\\platform-tools\\adb.exe', 'C:\\adb\\adb.exe', 'D:\\platform-tools\\adb.exe');
     if (process.env.LOCALAPPDATA) cands.push(path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk', 'platform-tools', 'adb.exe'));
   } else {
-    cands.push('/usr/local/bin/adb', '/usr/bin/adb', path.join(os.homedir(), 'Library/Android/sdk/platform-tools/adb'));
+    // /opt/homebrew 是 Apple Silicon 上 Homebrew 的默认位置（brew install android-platform-tools）
+    cands.push('/opt/homebrew/bin/adb', '/usr/local/bin/adb', '/usr/bin/adb', path.join(os.homedir(), 'Library/Android/sdk/platform-tools/adb'));
   }
   for (const c of cands) { try { if (fs.existsSync(c)) return c; } catch {} }
   return 'adb';   // 交给 PATH
@@ -443,8 +444,10 @@ server.tool(
       // ⑥ 截图自检
       try { await emuAdb(['shell', 'mkdir', '-p', '/sdcard/_shots']); } catch {}
       await emuAdb(['shell', 'screencap', '-p', '/sdcard/_roomsay.png']);
-      try { await emuAdb(['pull', '/sdcard/_roomsay.png', EMU_SHOT_DIR + '\\roomsay.png']); } catch {}
-      return text('已经在房间里说了：「' + msg + '」\n（截图: ' + EMU_SHOT_DIR + '\\roomsay.png ✗ 可以看图确认有没有真发出去 ✓）');
+      // 用 path.join：原来手拼 '\\roomsay.png'，在 macOS/Linux 上会生成一个文件名里带反斜杠的文件
+      const roomShot = path.join(EMU_SHOT_DIR, 'roomsay.png');
+      try { fs.mkdirSync(EMU_SHOT_DIR, { recursive: true }); await emuAdb(['pull', '/sdcard/_roomsay.png', roomShot]); } catch {}
+      return text('已经在房间里说了：「' + msg + '」\n（截图: ' + roomShot + ' ✗ 可以看图确认有没有真发出去 ✓）');
     } catch (e) {
       return fail('发到房间失败：' + (e && e.message ? e.message : e));
     }

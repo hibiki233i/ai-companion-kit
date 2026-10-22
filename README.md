@@ -88,6 +88,8 @@
 
 它**不会**做的事：装 DSH / SnowLuma、碰你现有的文件、联网往外发任何东西。
 
+> 🍎 **用 Mac？** 双击 `tools/安装.command` / `tools/启动.command`。Mac 上没有 SnowLuma，QQ 网关换成 NapCat → **[macOS + NapCat 适配](docs/macOS-NapCat-适配.md)**
+
 **前置只有两个，脚本装不了**：
 **Node.js**（去 nodejs.org 下 LTS，装完重启电脑）
 **一个能连 QQ 的网关**（SnowLuma）
