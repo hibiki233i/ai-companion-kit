@@ -251,3 +251,48 @@ token 不一致。确认 NapCat 两个服务的 token 都等于 `snowluma.access
 
 **收藏表情报 "缺少 NapCat 改备注需要的 emoId/resId"**
 本地表情库是从旧版同步来的，还没有这两个字段。让她调一次 `qq_list_stickers` 刷新表情库，或者重启桥接。
+
+---
+
+## 九、同时接 Telegram（可选）
+
+qq-bridge 可以再挂一个 Telegram bot 入口。她还是同一个她：人设、记忆、日记、DSH 都和 QQ 共用，只是多了一个能找到她的地方。
+
+**准备**
+
+1. 在 Telegram 里找 @BotFather，发 `/newbot`，按提示起名字，拿到 bot token。
+2. 国内直连不通 Telegram，需要本机开着 HTTP 代理（Clash 默认是 `http://127.0.0.1:7890`）。
+3. 想让她在群里看到所有消息（而不只是 @ 她的），在 @BotFather 里 `/setprivacy` → 选这个 bot → `Disable`，然后把 bot 移出群再拉回来。
+
+**配置**：双击 `tools/配置.command`，在「Telegram（可选）」那一栏勾选启用，填 token、代理和你自己的 Telegram id，点「测试连接」，再保存，然后重启桥接。也可以直接改 `config.json`：
+
+```json
+"telegram": {
+  "enabled": true,
+  "botToken": "123456789:AA…",
+  "proxy": "http://127.0.0.1:7890",
+  "ownerId": 123456789,
+  "allow": { "private": [], "groups": [] }
+}
+```
+
+**怎么拿到 id**：保存并启动桥接后，用你自己的号给 bot 发一句话（群就把 bot 拉进去再 @ 它）。桥接日志里会出现 `忽略未授权会话 private:tg123456789` 或 `group:tg-1001234567890`，`tg` 后面那串就是 id。私聊 id 是正数，群 id 是负数。填进名单后重启桥接。`ownerId` 的私聊总是放行，不用另外加名单。
+
+**能用 / 不能用**
+
+| 在 Telegram 上 | 情况 |
+|---|---|
+| 私聊、群聊收发文字；引用、@ | 能 |
+| 收图片（照片、图片文件、静态贴纸）给她看 | 能 |
+| 管理员命令 `/reset`、`/status` 等 | 能（`ownerId` 本人） |
+| 二代仿真模式（她自己决定什么时候说话） | 能，和 QQ 群一样 |
+| 拍一拍、QQ 表情包、语音、合并转发 | 不能，只有 QQ 有；她在 Telegram 会话里调这些会被告知不支持 |
+| 封闭 agent 模式（closed-agent） | 只认 QQ 管理员 |
+
+**常见问题**
+
+- 日志里 `连不上 Telegram … 国内一般要配 telegram.proxy`：代理没填或者没开。
+- 日志里 `botToken 无效`：token 抄错了，或者在 BotFather 里重置过。
+- 日志里 `同一个 bot 有别的程序在收消息，或者设置了 webhook`：一个 bot 同时只能有一个接收方，把别处跑着的同一个 bot 停掉。
+- 桥接停机期间积压超过 10 分钟的消息，重启后不再回复（免得一上线就对着旧消息刷屏）。
+
