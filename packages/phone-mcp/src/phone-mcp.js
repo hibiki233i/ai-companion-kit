@@ -51,6 +51,8 @@ const ADB = findAdb();
 const SHOT_DIR = process.env.PHONE_SHOT_DIR || path.join(os.tmpdir(), 'phone-mcp-shots');
 // 默认设备：留空 = 自动选第一个已连接设备（可用 PHONE_SERIAL 固定到某一台）
 let SERIAL = process.env.PHONE_SERIAL || '';
+// 设了 PHONE_SERIAL 就固定在这台设备上，phone_devices 不能切走
+const PINNED_SERIAL = SERIAL;
 
 async function adb(args, { timeout = 30000, serial = true } = {}) {
   const full = serial && SERIAL ? ['-s', SERIAL, ...args] : args;
@@ -87,8 +89,54 @@ async function shell(cmd, timeout = 30000) {
 
 const text = (s) => ({ content: [{ type: 'text', text: String(s) }] });
 const fail = (s) => ({ content: [{ type: 'text', text: String(s) }], isError: true });
+// 日志只能写 stderr：stdout 是 MCP 协议通道（之前没定义 log，连招打字、存宏、放宏都会报 log is not defined）
+const log = (...args) => console.error(...args);
 
 const server = new McpServer({ name: 'phone', version: '0.1.0' });
+
+// ── 硬性限流：把"别太过分"写进代码（不靠她自觉）──────────────────────────
+// 写操作（点按/打字/滑动/按键/开应用/连招）每天上限、每分钟上限；
+// 截图/录屏也有上限，避免她一直盯着你的屏幕看。上限可用环境变量调。
+// 这个 Proxy 必须装在所有 server.tool(...) 之前：装在后面的话，前面注册的工具一个都不限流。
+const envInt = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+};
+const RATE_LIMIT = {
+  write: { perMinute: envInt('PHONE_WRITE_PER_MINUTE', 5), perDay: envInt('PHONE_WRITE_PER_DAY', 40), hits: [] },
+  look:  { perMinute: envInt('PHONE_LOOK_PER_MINUTE', 3), perDay: envInt('PHONE_LOOK_PER_DAY', 80), hits: [] },
+};
+function rateCheck(kind) {
+  const rl = RATE_LIMIT[kind];
+  const now = Date.now();
+  rl.hits = rl.hits.filter((t) => now - t < 24 * 3600 * 1000);
+  const lastMin = rl.hits.filter((t) => now - t < 60000).length;
+  if (lastMin >= rl.perMinute) return `【限流】${kind} 类操作每分钟最多 ${rl.perMinute} 次，已拒绝。`;
+  if (rl.hits.length >= rl.perDay) return `【限流】${kind} 类操作每天最多 ${rl.perDay} 次，今天已用完，请明天再来。`;
+  rl.hits.push(now);
+  return null;
+}
+const WRITE_TOOLS = new Set(['phone_tap', 'phone_tap_text', 'phone_text', 'phone_swipe', 'phone_key', 'phone_open_app', 'phone_macro']);
+const LOOK_TOOLS = new Set(['phone_screenshot', 'phone_dump', 'phone_record_screen']);
+// PHONE_TOOLS（逗号分隔）：只注册这些工具，其余的模型根本看不到。不设 = 全部注册。
+const ONLY_TOOLS = process.env.PHONE_TOOLS
+  ? new Set(process.env.PHONE_TOOLS.split(',').map((t) => t.trim()).filter(Boolean))
+  : null;
+server.tool = new Proxy(server.tool.bind(server), {
+  apply(target, thisArg, args) {
+    const name = args[0];
+    if (ONLY_TOOLS && !ONLY_TOOLS.has(name)) return undefined;
+    const kind = WRITE_TOOLS.has(name) ? 'write' : LOOK_TOOLS.has(name) ? 'look' : null;
+    if (!kind) return Reflect.apply(target, thisArg, args);
+    const handler = args[args.length - 1];
+    args[args.length - 1] = async (...rest) => {
+      const blocked = rateCheck(kind);
+      if (blocked) return fail(blocked);
+      return await handler(...rest);
+    };
+    return Reflect.apply(target, thisArg, args);
+  },
+});
 
 server.tool(
   'music_lyrics',
@@ -375,7 +423,7 @@ async function ensureIme(force = false) {
   await adb(['shell', 'settings', 'put', 'secure', 'default_input_method', IME]);
   await emuSleep(600);
   const after = String((await adb(['shell', 'settings', 'get', 'secure', 'default_input_method'])).out || '').trim();
-  log ? log('[ime] 输入法 ' + cur + ' → ' + after) : null;
+  log('[ime] 输入法 ' + cur + ' → ' + after);
   imeChecked = Date.now();
   return after === IME;
 }
@@ -467,7 +515,7 @@ server.tool(
       ms: z.number().optional().describe('longpress 时长 / sleep 毫秒 / swipe 滑动时长（默认 200）'),
       key: z.string().optional().describe('key 动作：back/home/enter/recent/volume_up/volume_down/power/delete'),
       text: z.string().optional().describe('text 动作：要输入的文本（支持中文 ✗ 需装 ADBKeyboard ✓）')
-    })).min(1).max(200).describe('动作列表，按顺序执行'),
+    })).min(1).max(200).optional().describe('动作列表，按顺序执行（用 playName 放存过的宏时可以不传）'),
     stepMs: z.number().optional().describe('每个动作之后默认等待毫秒（默认 400 ✗ 玩游戏可调小到 150）'),
     repeat: z.number().optional().describe('★整套动作重复几次（默认 1 ✗ 最多 200）✗ 玩游戏刷同一套操作时用它，只花一次调用'),
     repeatGapMs: z.number().optional().describe('每次重复之间的等待毫秒（默认 300 ✗ 打怪可以 100）'),
@@ -513,6 +561,9 @@ server.tool(
     const t0 = Date.now();
     try {
       const rounds = Math.max(1, Math.min(200, Math.round(Number(repeat) || 1)));
+      // 一次调用只算一次写操作，所以总步数要单独卡住（200 条 × 200 遍就是四万次点按）
+      const MAX_MACRO_STEPS = 2000;
+      if (actions.length * rounds > MAX_MACRO_STEPS) return fail(`这套连招一共 ${actions.length * rounds} 步，一次最多 ${MAX_MACRO_STEPS} 步，拆开分几次放吧。`);
       for (let round = 0; round < rounds; round++) {
       if (round > 0 && repeatGapMs > 0) {
         await new Promise((r) => setTimeout(r, Math.max(0, Math.min(10000, repeatGapMs))));
@@ -553,7 +604,8 @@ server.tool(
           const s = String(a.text ?? '');
           if (!s) throw new Error('text 不能为空');
           await ensureIme();
-          await adb(['shell', 'am', 'broadcast', '-a', 'ADB_INPUT_TEXT', '--es', 'msg', s]);
+          // adb shell 的多个参数会用空格拼起来交给手机端 sh（不转义），所以要自己加引号
+          await adb(['shell', `am broadcast -a ADB_INPUT_TEXT --es msg '${s.replace(/'/g, "'\\''")}'`]);
           done.push('text(' + s.slice(0, 12) + ')');
         } else {
           throw new Error('未知动作类型: ' + type);
@@ -625,6 +677,7 @@ server.tool('phone_devices', '列出所有 adb 设备，并可直接切换当前
   use: z.string().optional().describe('要切换到的设备序列号（可选）'),
 }, async ({ use }) => {
   const d = await adb(['devices', '-l'], { serial: false });
+  if (use && PINNED_SERIAL && use !== PINNED_SERIAL) return fail(`设备已固定为 ${PINNED_SERIAL}（PHONE_SERIAL），不能切换。`);
   if (use) SERIAL = use;
   return text(`${d.out}\n当前选中: ${SERIAL || '（自动选第一台）'}`);
 });
@@ -801,6 +854,8 @@ server.tool('phone_open_app', '按包名或关键字启动一个 App（例如 co
   await ensureDevice();
   const target = String(pkg || '').trim();
   if (!target) return fail('要启动什么？给包名或关键字。');
+  // 下面几条命令都是拼成字符串交给手机端 shell 的，只收包名里会出现的字符，别的一律拒绝
+  if (!/^[A-Za-z0-9._]{1,128}$/.test(target)) return fail('包名或关键字只能有字母、数字、点和下划线（例如 com.tencent.mm 或 tencent）。');
   // RAW_ADB_OK：am start 有时返回非零但仍然成功 ✗ 所以这里不用会抛异常的 shell()
   const run = async (cmd) => {
     const r = await adb(['shell', cmd], { timeout: 20000 });
@@ -947,39 +1002,6 @@ server.tool(
   }
 );
 
-// ── 硬性限流：把"别太过分"写进代码（不靠她自觉）──────────────────────────
-// 写操作（点按/打字/滑动/按键/开应用/shell）每天上限、每分钟上限；
-// 截图/录屏也有上限，避免她一直盯着你的屏幕看。
-const RATE_LIMIT = {
-  write: { perMinute: 5, perDay: 40, hits: [] },
-  look:  { perMinute: 3, perDay: 80, hits: [] },
-};
-function rateCheck(kind) {
-  const rl = RATE_LIMIT[kind];
-  const now = Date.now();
-  rl.hits = rl.hits.filter((t) => now - t < 24 * 3600 * 1000);
-  const lastMin = rl.hits.filter((t) => now - t < 60000).length;
-  if (lastMin >= rl.perMinute) return `【限流】${kind} 类操作每分钟最多 ${rl.perMinute} 次，已拒绝。`;
-  if (rl.hits.length >= rl.perDay) return `【限流】${kind} 类操作每天最多 ${rl.perDay} 次，今天已用完，请明天再来。`;
-  rl.hits.push(now);
-  return null;
-}
-const WRITE_TOOLS = new Set(['phone_tap', 'phone_tap_text', 'phone_text', 'phone_swipe', 'phone_key', 'phone_open_app', 'phone_shell']);
-const LOOK_TOOLS = new Set(['phone_screenshot', 'phone_dump', 'phone_record_screen']);
-server.tool = new Proxy(server.tool.bind(server), {
-  apply(target, thisArg, args) {
-    const name = args[0];
-    const kind = WRITE_TOOLS.has(name) ? 'write' : LOOK_TOOLS.has(name) ? 'look' : null;
-    if (!kind) return Reflect.apply(target, thisArg, args);
-    const handler = args[args.length - 1];
-    args[args.length - 1] = async (...rest) => {
-      const blocked = rateCheck(kind);
-      if (blocked) return fail(blocked);
-      return await handler(...rest);
-    };
-    return Reflect.apply(target, thisArg, args);
-  },
-});
 // ── QQ 空间（说说）：发/看/赞/评（删除与拉黑故意不提供）──────────────────────
 // 只给"创作类"能力，符合她"不删任何东西"的规矩；带频率上限防刷屏。
 function htmlToText(s) {

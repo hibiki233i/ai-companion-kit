@@ -12,6 +12,7 @@
     "check": "node scripts/check.mjs",
     "phone": "node packages/phone-mcp/src/phone-mcp.js",
     "phone:test": "node packages/phone-mcp/src/phone-mcp.js --selftest",
+    "phone:check": "node scripts/test-phone-mcp.mjs",
     "qzone": "node packages/qzone/open-zone.mjs",
     "qzone:test": "node packages/qzone-mcp/src/qzone-mcp.js --selftest"
   },
