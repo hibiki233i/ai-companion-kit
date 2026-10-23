@@ -325,6 +325,10 @@ Telegram 的 bot 读写不了你账号里的"收藏贴纸"，它能长期存贴�
 **常见问题**
 
 - 日志里 `连不上 Telegram … 国内一般要配 telegram.proxy`：代理没填或者没开。
+- 消息能收能发，但时不时冒出 `Client network socket disconnected before secure TLS connection was established` 或 `socket hang up`（看图、发消息偶尔失败）：多半是代理里给 Telegram 用的那个节点不稳，新连接在 TLS 握手时被掐断。已经连上的连接会复用，所以大部分请求还是成功的。
+  - 验证方法：终端里连跑几次 `curl -s -o /dev/null -w '%{http_code}\n' https://api.telegram.org/`。经常输出 `000`、而换成 `https://www.google.com/` 一直正常，就是 Telegram 那条线路的问题。
+  - 解决：在代理软件里给 Telegram 那个策略组（比如「电报信息」）换一个节点。
+  - 桥接会自动重试：握手前就断的请求肯定没发出去，什么都重试；握手后才断的只重试看图这类只读请求，发消息不重试，免得发两遍。最多重试两次，节点太差的话照样会失败。
 - 日志里 `botToken 无效`：token 抄错了，或者在 BotFather 里重置过。
 - 日志里 `同一个 bot 有别的程序在收消息，或者设置了 webhook`：一个 bot 同时只能有一个接收方，把别处跑着的同一个 bot 停掉。
 - 桥接停机期间积压超过 10 分钟的消息，重启后不再回复（免得一上线就对着旧消息刷屏）。
