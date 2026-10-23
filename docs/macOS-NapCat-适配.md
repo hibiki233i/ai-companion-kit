@@ -174,6 +174,18 @@ npm run phone:test
 - adb 会自动在 `/opt/homebrew/bin`、`/usr/local/bin`、`~/Library/Android/sdk/platform-tools` 里找。
 - 雷电模拟器只有 Windows 版。Mac 上用 **Android Studio 自带的模拟器**（Apple Silicon 跑 arm64 镜像，设备名默认 `emulator-5554`，和代码里的默认值一致），或者用一台闲置安卓机通过 USB 或无线 adb 连接。
 - `ncm_room_say` 里的点击坐标是按作者那台模拟器的分辨率写死的，换任何设备都要重新校准。这和操作系统无关。
+- BlueStacks（蓝叠）在 Mac 上也能用：它的 adb 口是 `127.0.0.1:5555`，`adb connect 127.0.0.1:5555` 之后 `adb devices` 会同时列出 `127.0.0.1:5555` 和 `emulator-5554`，两个是同一台（adb 自动扫到的那个名字重启后不用再 connect）。注意它监听的是 `*:5555`，局域网里的设备也能连上来控制它，不用时在 BlueStacks 设置里关掉 ADB。
+- 打中文要先在模拟器里装 ADBKeyboard 输入法，没装时 `phone_text` 只能打英文。
+
+**让她在 QQ 上用手机（只给你的私聊）**
+
+qq-bridge 可以只给管理员私聊挂上手机工具，群聊和别人的私聊看不到。只在二代仿真（reserved2）模式下生效：
+
+1. 在 qq-bridge 的 `config.json` 里加：`"socialV2": { …, "ownerPhone": { "enabled": true, "serial": "emulator-5554" } }`
+2. 在 qq-bridge 目录跑 `node scripts/setup-dsh.mjs`，然后重启 DSH（`dsh web`）和桥接。
+3. 你私聊她（或者关联过的 Telegram 私聊），说清楚要她在手机上干什么。
+
+她只能用操作这台模拟器的工具（截图、点按、滑动、打字、按键、连招、打开应用）；换设备、读电脑上的视频文件、发说说、网易云这些默认不放行。规则细节见 qq-bridge 的 `RULES.md`「管理员私聊的手机工具」。别在模拟器里登录重要账号或绑支付：你转给她的聊天记录、图片里的内容，仍然可能诱导她点模拟器上的东西。
 
 ---
 
