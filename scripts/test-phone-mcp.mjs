@@ -131,25 +131,32 @@ await test('phone_macro：一次最多 2000 步', async () => {
 await test('截图缓存：启动时清掉超过保留期的，别的文件和符号链接不碰', async () => {
   const shots = path.join(tmp, 'shots');
   fs.rmSync(shots, { recursive: true, force: true });
-  fs.mkdirSync(path.join(shots, 'recframes-old'), { recursive: true });
+  const OLD = '2024-01-02T03-04-05-678Z';
+  const NOW = new Date().toISOString().replace(/[:.]/g, '-');
+  fs.mkdirSync(path.join(shots, `recframes-${OLD}`), { recursive: true });
+  fs.mkdirSync(path.join(shots, 'frames-from-premiere', 'sub'), { recursive: true });
   const outside = path.join(tmp, 'outside.txt');
   fs.writeFileSync(outside, 'keep');
   const files = {
-    oldShot: path.join(shots, 'shot-old.png'), newShot: path.join(shots, 'shot-new.png'),
-    oldRec: path.join(shots, 'rec-old.mp4'), oldFrames: path.join(shots, 'recframes-old'),
-    mine: path.join(shots, 'notes.txt'), link: path.join(shots, 'shot-link.png'),
+    oldShot: path.join(shots, `shot-${OLD}-note.png`), newShot: path.join(shots, `shot-${NOW}.png`),
+    oldRec: path.join(shots, `rec-${OLD}.mp4`), oldFrames: path.join(shots, `recframes-${OLD}`),
+    mine: path.join(shots, 'notes.txt'), link: path.join(shots, `shot-${OLD}.png`),
+    // 用户自己的、名字长得像的东西（PHONE_SHOT_DIR 指到别的目录时会遇到）
+    userFrames: path.join(shots, 'frames-from-premiere'), userShot: path.join(shots, 'shot-holiday.png'), macro: path.join(shots, 'macro.png'),
   };
-  for (const f of [files.oldShot, files.newShot, files.oldRec, files.mine]) fs.writeFileSync(f, 'x');
+  for (const f of [files.oldShot, files.newShot, files.oldRec, files.mine, files.userShot, files.macro]) fs.writeFileSync(f, 'x');
   fs.writeFileSync(path.join(files.oldFrames, 'f01.jpg'), 'x');
+  fs.writeFileSync(path.join(files.userFrames, 'sub', 'a.txt'), 'x');
   fs.symlinkSync(outside, files.link);
   const old = new Date(Date.now() - 48 * 3600 * 1000);
-  for (const f of [files.oldShot, files.oldRec, files.oldFrames, files.mine]) fs.utimesSync(f, old, old);
+  for (const f of [files.oldShot, files.oldRec, files.oldFrames, files.mine, files.userFrames, files.userShot, files.macro]) fs.utimesSync(f, old, old);
   fs.lutimesSync(files.link, old, old);
   await withServer({ PHONE_SERIAL: 'emulator-5554' }, async (client) => { await client.listTools(); });
   assert.ok(!fs.existsSync(files.oldShot) && !fs.existsSync(files.oldRec) && !fs.existsSync(files.oldFrames), '超过 24 小时的缓存删掉');
   assert.ok(fs.existsSync(files.newShot), '新的截图留着');
   assert.ok(fs.existsSync(files.mine), '不是 phone-mcp 起名的文件不碰');
   assert.ok(fs.lstatSync(files.link).isSymbolicLink() && fs.readFileSync(outside, 'utf8') === 'keep', '符号链接不跟、不删');
+  assert.ok(fs.existsSync(path.join(files.userFrames, 'sub', 'a.txt')) && fs.existsSync(files.userShot) && fs.existsSync(files.macro), '名字像但没有 phone-mcp 时间戳的不碰');
 });
 
 await test('截图缓存：--clean-shots 手动全清', async () => {
@@ -158,7 +165,7 @@ await test('截图缓存：--clean-shots 手动全清', async () => {
   const r = spawnSync(process.execPath, [SERVER, '--clean-shots'], { env: { PATH: process.env.PATH, HOME: tmp, PHONE_ADB: fakeAdb, PHONE_SHOT_DIR: shots }, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /已清理 \d+ 项/);
-  assert.deepEqual(fs.readdirSync(shots).sort(), ['notes.txt', 'shot-link.png'], '只剩不归 phone-mcp 管的');
+  assert.deepEqual(fs.readdirSync(shots).sort(), ['frames-from-premiere', 'macro.png', 'notes.txt', 'shot-2024-01-02T03-04-05-678Z.png', 'shot-holiday.png'], '只剩不归 phone-mcp 管的（含那个符号链接）');
 });
 
 await test('录屏：帧直接返回，视频和帧文件不留在本机', async () => {
@@ -178,6 +185,15 @@ fs.writeFileSync(out.replace('%02d', '01'), 'jpg'); fs.writeFileSync(out.replace
     assert.equal(r.content.filter((c) => c.type === 'image').length, 2);
   });
   assert.deepEqual(fs.readdirSync(shots), [], '录屏的 mp4 和帧都删了');
+  // 抽帧失败（ffmpeg 什么都没产出）：也不留文件，报错里不带本机路径
+  const noFrames = path.join(tmp, 'ffmpeg-nothing');
+  fs.writeFileSync(noFrames, `#!${process.execPath}\nprocess.stderr.write('decode error'); process.exit(1);\n`, { mode: 0o755 });
+  await withServer({ PHONE_SERIAL: 'emulator-5554', PHONE_ADB: adbWithPull, PHONE_SHOT_DIR: shots, PHONE_FFMPEG: noFrames }, async (client) => {
+    const r = await client.callTool({ name: 'phone_record_screen', arguments: { seconds: 1, frames: 2 } });
+    assert.equal(r.isError, true);
+    assert.ok(!textOf(r).includes(shots), '报错里不带本机路径');
+  });
+  assert.deepEqual(fs.readdirSync(shots), [], '抽帧失败也不留文件');
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

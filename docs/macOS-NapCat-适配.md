@@ -176,7 +176,10 @@ npm run phone:test
 - `ncm_room_say` 里的点击坐标是按作者那台模拟器的分辨率写死的，换任何设备都要重新校准。这和操作系统无关。
 - BlueStacks（蓝叠）在 Mac 上也能用：它的 adb 口是 `127.0.0.1:5555`，`adb connect 127.0.0.1:5555` 之后 `adb devices` 会同时列出 `127.0.0.1:5555` 和 `emulator-5554`，两个是同一台（adb 自动扫到的那个名字重启后不用再 connect）。注意它监听的是 `*:5555`，局域网里的设备也能连上来控制它，不用时在 BlueStacks 设置里关掉 ADB。
 - 打中文要先在模拟器里装 ADBKeyboard 输入法，没装时 `phone_text` 只能打英文。
-- 截图存在本机 `$TMPDIR/phone-mcp-shots/`，phone-mcp 启动时和之后每小时删掉超过 24 小时的（环境变量 `PHONE_SHOT_MAX_AGE_HOURS` 改保留时长）；录屏的视频和帧用完马上删。想立刻清空：`node packages/phone-mcp/src/phone-mcp.js --clean-shots`。模拟器里 `/sdcard/` 下那几个 `_dsh_*` 文件是固定名字、每次覆盖，不会越攒越多，要删就自己删。
+- 截图在本机有两份：
+  - phone-mcp 自己的缓存 `$TMPDIR/phone-mcp-shots/`：启动时和之后每小时删掉超过 24 小时的；录屏的视频和帧用完马上删。想立刻清空：`node packages/phone-mcp/src/phone-mcp.js --clean-shots`。改保留时长要在启动 `dsh web` 的终端里先 `export PHONE_SHOT_MAX_AGE_HOURS=…`（至少 1）。
+  - DSH 把每张发给模型的图（截图、录屏帧，也包括 QQ 里收到的图）另存在 `~/.dsh/attachments/v1/`，DSH 自己**永远不删**。这份 phone-mcp 管不了；手动删的话，引用过这些图的会话以后读历史会报错，所以别在会话还要用的时候删。
+- 模拟器里 `/sdcard/` 下是几个固定名字的文件（`_dsh_shot.png`、`_dsh_rec.mp4`、`_dsh_ui.xml`，用网易云聊天室时还有 `_roomsay.png` 和 `_shots/`），每次覆盖，不会越攒越多，要删就自己删。
 
 **让她在 QQ 上用手机（只给你的私聊）**
 

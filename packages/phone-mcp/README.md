@@ -217,11 +217,17 @@ MCP 客户端配置（以通用 stdio 形式为例）：
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PHONE_ADB` | 自动探测 | adb 可执行文件路径 |
-| `PHONE_SERIAL` | 自动选第一台 | 设备序列号，例如 `192.168.1.98:5555` 或 `emulator-5554` |
-| `PHONE_SHOT_DIR` | 系统临时目录 | 截图输出目录 |
+| `PHONE_SERIAL` | 自动选第一台 | 设备序列号，例如 `192.168.1.98:5555` 或 `emulator-5554`。设了之后 `phone_devices` 只能看、切不走 |
+| `PHONE_TOOLS` | 全部 | 逗号分隔的工具名：只注册这些，其余的模型看不到 |
+| `PHONE_WRITE_PER_MINUTE` / `PHONE_WRITE_PER_DAY` | 5 / 40 | 写操作（点按、打字、滑动、按键、开应用、连招）的限流 |
+| `PHONE_LOOK_PER_MINUTE` / `PHONE_LOOK_PER_DAY` | 3 / 80 | 看（截图、读界面、录屏）的限流 |
+| `PHONE_SHOT_DIR` | 系统临时目录/phone-mcp-shots | 截图输出目录 |
+| `PHONE_SHOT_MAX_AGE_HOURS` | 24 | 截图缓存保留多久（小时，至少 1）。启动时和之后每小时清一次 |
 | `PHONE_MACRO_FILE` | `~/.phone-mcp/macros.json` | 宏存储文件 |
 | `PHONE_FFMPEG` | `ffmpeg` | ffmpeg 路径（只有 `video_frames` 需要） |
 | `PHONE_MUSIC_OWNER_UID` | 空 | 网易云里"主人"的数字 uid（只有私信相关工具需要） |
+
+截图缓存：只清 phone-mcp 自己起的、带时间戳的文件（`shot-<时间>.png`、`rec-<时间>.mp4`、`recframes-<时间>/`、`frames-<时间>/`），不跟符号链接；录屏的视频和帧返回后马上删。想立刻清空就跑 `node src/phone-mcp.js --clean-shots`。注意：MCP 客户端可能会把工具返回的图片另存一份（DSH 存在 `~/.dsh/attachments/`，而且永远不删），那份不归 phone-mcp 管。
 
 ---
 

@@ -52,11 +52,15 @@ const ADB = findAdb();
 const SHOT_DIR = process.env.PHONE_SHOT_DIR || path.join(os.tmpdir(), 'phone-mcp-shots');
 
 // ── 截图缓存清理（只管本机这边；模拟器里是几个固定文件名，每次覆盖，不会越攒越多）──
-// 只删 phone-mcp 自己起的名字，不跟符号链接：PHONE_SHOT_DIR 指到别的目录时，别的文件一个都不碰。
-const SHOT_ENTRY_RE = /^(?:shot-.+\.png|rec-.+\.mp4|recframes-.+|frames-.+|macro\.png|roomsay\.png)$/;
+// 只删 phone-mcp 自己起的、带它那种时间戳（toISOString 把 : 和 . 换成 -）的名字，不跟符号链接：
+// PHONE_SHOT_DIR 指到别的目录时，用户自己的 frames-xxx/、shot-holiday.png 这类文件不会被误删。
+// macro.png / roomsay.png 是固定名字、每次覆盖，不会越攒越多，不在清理范围里。
+const SHOT_STAMP = '\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z';
+const SHOT_ENTRY_RE = new RegExp(`^(?:shot-${SHOT_STAMP}(?:-[\\w-]*)?\\.png|rec-${SHOT_STAMP}\\.mp4|recframes-${SHOT_STAMP}|frames-${SHOT_STAMP})$`);
+// 保留时长至少 1 小时：太短的话，每小时那次清理可能删掉正在抽帧的录屏
 const SHOT_MAX_AGE_MS = (() => {
   const h = Number(process.env.PHONE_SHOT_MAX_AGE_HOURS);
-  return (Number.isFinite(h) && h > 0 ? h : 24) * 3600 * 1000;
+  return (Number.isFinite(h) && h >= 1 ? h : 24) * 3600 * 1000;
 })();
 function cleanShotDir(maxAgeMs = SHOT_MAX_AGE_MS) {
   let removed = 0;
@@ -999,22 +1003,22 @@ server.tool(
     frames: z.number().int().min(2).max(12).default(6).describe('抽几帧'),
   },
   async ({ seconds, frames }) => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const local = path.join(SHOT_DIR, `rec-${stamp}.mp4`);
+    const outDir = path.join(SHOT_DIR, 'recframes-' + stamp);
     try {
       await ensureDevice();
       fs.mkdirSync(SHOT_DIR, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const remote = '/sdcard/_dsh_rec.mp4';
-      const local = path.join(SHOT_DIR, `rec-${stamp}.mp4`);
       await shell(`screenrecord --time-limit ${seconds} --bit-rate 4000000 ${remote}`, (seconds + 30) * 1000);
       const pull = await adb(['pull', remote, local], { timeout: 120000 });
       if (!pull.ok || !fs.existsSync(local)) return fail(`录屏拉取失败：${pull.err || pull.out}`);
-      const outDir = path.join(SHOT_DIR, 'recframes-' + stamp);
       fs.mkdirSync(outDir, { recursive: true });
       const res = await runFfmpeg(['-y', '-hide_banner', '-loglevel', 'error', '-i', local,
         '-vf', `fps=${(frames / Math.max(1, seconds)).toFixed(4)},scale='min(720,iw)':-2`,
         '-frames:v', String(frames), path.join(outDir, 'f%02d.jpg')]);
       const files = fs.readdirSync(outDir).filter((f) => f.endsWith('.jpg')).sort();
-      if (!files.length) return fail(`录屏抽帧失败：${res.err.slice(0, 200)}（视频在 ${local}）`);
+      if (!files.length) return fail(`录屏抽帧失败：${res.err.slice(0, 200)}`);
       const content = [{ type: 'text', text: `手机录屏 ${seconds} 秒，抽了 ${files.length} 帧` }];
       for (const f of files) {
         const p = path.join(outDir, f);
@@ -1023,11 +1027,12 @@ server.tool(
           content.push({ type: 'image', data: fs.readFileSync(p).toString('base64'), mimeType: 'image/jpeg' });
         }
       }
-      // 帧已经直接塞进返回里了，视频和帧文件留着没用，马上删
-      removeQuietly(local, outDir);
       return { content };
     } catch (e) {
       return fail(`录屏失败：${e?.message ?? e}`);
+    } finally {
+      // 帧已经直接塞进返回里了（失败时也没什么可留的），视频和帧文件马上删
+      removeQuietly(local, outDir);
     }
   }
 );
