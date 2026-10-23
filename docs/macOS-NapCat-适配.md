@@ -252,6 +252,11 @@ token 不一致。确认 NapCat 两个服务的 token 都等于 `snowluma.access
 **收藏表情报 "缺少 NapCat 改备注需要的 emoId/resId"**
 本地表情库是从旧版同步来的，还没有这两个字段。让她调一次 `qq_list_stickers` 刷新表情库，或者重启桥接。
 
+**图片 / 表情看不了，日志里是 "域名解析到内网/本机地址，已阻止" 或 "看起来是代理的 fake-ip 模式"**
+电脑上开着 Clash / Surge / sing-box 这类代理的 TUN + fake-ip 模式。这时所有域名都解析成 `198.18.x.x`，桥接防 SSRF 的检查会把它当成内网地址。验证方法：终端里跑 `dscacheutil -q host -a name example.com`，出来的是 `198.18.` 开头就是这种情况。
+- 桥接对几个固定地址认 fake-ip：QQ 的图片 / 表情 CDN（`multimedia.nt.qq.com.cn`、`gxh.vip.qq.com`、`*.qpic.cn`、`*.qlogo.cn`），以及联网搜索用的 `api.deepseek.com`、`cn.bing.com`。看图、看表情、搜索都能正常用。
+- 其他网站还是拦，所以 `web_fetch` 抓网页在 fake-ip 下用不了。这是故意的：fake-ip 下桥接看不到真实地址，全放开等于让代理替任何人连你的电脑和局域网。要用的话，在代理配置的 `fake-ip-filter` 里加上那些域名，或者把代理切到 redir-host / 真实 IP 模式。
+
 ---
 
 ## 九、同时接 Telegram（可选）
