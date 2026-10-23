@@ -9,6 +9,7 @@
 //   PHONE_ADB         adb 可执行文件路径（默认自动探测 PATH / 常见安装位置）
 //   PHONE_SERIAL      设备序列号（默认选第一个已连接设备）
 //   PHONE_SHOT_DIR    截图输出目录（默认 系统临时目录/phone-mcp-shots）
+//   PHONE_SHOT_MAX_AGE_HOURS  截图缓存保留多久（小时，默认 24；启动时和之后每小时清一次）
 //   PHONE_MACRO_FILE  宏存储文件（默认 用户目录/.phone-mcp/macros.json）
 //   PHONE_FFMPEG      ffmpeg 路径（默认自动探测，仅 video_frames 需要）
 //
@@ -49,6 +50,32 @@ function findAdb() {
 }
 const ADB = findAdb();
 const SHOT_DIR = process.env.PHONE_SHOT_DIR || path.join(os.tmpdir(), 'phone-mcp-shots');
+
+// ── 截图缓存清理（只管本机这边；模拟器里是几个固定文件名，每次覆盖，不会越攒越多）──
+// 只删 phone-mcp 自己起的名字，不跟符号链接：PHONE_SHOT_DIR 指到别的目录时，别的文件一个都不碰。
+const SHOT_ENTRY_RE = /^(?:shot-.+\.png|rec-.+\.mp4|recframes-.+|frames-.+|macro\.png|roomsay\.png)$/;
+const SHOT_MAX_AGE_MS = (() => {
+  const h = Number(process.env.PHONE_SHOT_MAX_AGE_HOURS);
+  return (Number.isFinite(h) && h > 0 ? h : 24) * 3600 * 1000;
+})();
+function cleanShotDir(maxAgeMs = SHOT_MAX_AGE_MS) {
+  let removed = 0;
+  let entries;
+  try { entries = fs.readdirSync(SHOT_DIR, { withFileTypes: true }); } catch { return removed; }
+  const now = Date.now();
+  for (const entry of entries) {
+    if (!SHOT_ENTRY_RE.test(entry.name) || entry.isSymbolicLink()) continue;
+    const p = path.join(SHOT_DIR, entry.name);
+    try {
+      const st = fs.lstatSync(p);
+      if (st.isSymbolicLink() || now - st.mtimeMs < maxAgeMs) continue;
+      fs.rmSync(p, { recursive: st.isDirectory(), force: true });
+      removed += 1;
+    } catch {}
+  }
+  return removed;
+}
+const removeQuietly = (...paths) => { for (const p of paths) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} } };
 // 默认设备：留空 = 自动选第一个已连接设备（可用 PHONE_SERIAL 固定到某一台）
 let SERIAL = process.env.PHONE_SERIAL || '';
 // 设了 PHONE_SERIAL 就固定在这台设备上，phone_devices 不能切走
@@ -947,7 +974,7 @@ server.tool(
       if (!files.length) {
         return fail(`抽帧失败（没有产出图片）：${res.err.slice(0, 300) || '未知原因'}  源：${r.file}`);
       }
-      const content = [{ type: 'text', text: `已从视频抽出 ${files.length} 帧（时长${dur > 0 ? ' ' + dur + ' 秒' : ''}），目录：${outDir}` }];
+      const content = [{ type: 'text', text: `已从视频抽出 ${files.length} 帧（时长${dur > 0 ? ' ' + dur + ' 秒' : ''}）` }];
       for (const f of files) {
         const p = path.join(outDir, f);
         const size = fs.statSync(p).size;
@@ -956,6 +983,7 @@ server.tool(
           content.push({ type: 'image', data: fs.readFileSync(p).toString('base64'), mimeType: 'image/jpeg' });
         }
       }
+      removeQuietly(outDir);
       return { content };
     } catch (e) {
       return fail(`看视频失败：${e?.message ?? e}`);
@@ -987,7 +1015,7 @@ server.tool(
         '-frames:v', String(frames), path.join(outDir, 'f%02d.jpg')]);
       const files = fs.readdirSync(outDir).filter((f) => f.endsWith('.jpg')).sort();
       if (!files.length) return fail(`录屏抽帧失败：${res.err.slice(0, 200)}（视频在 ${local}）`);
-      const content = [{ type: 'text', text: `手机录屏 ${seconds} 秒，抽了 ${files.length} 帧（视频：${local}）` }];
+      const content = [{ type: 'text', text: `手机录屏 ${seconds} 秒，抽了 ${files.length} 帧` }];
       for (const f of files) {
         const p = path.join(outDir, f);
         if (fs.statSync(p).size > 0) {
@@ -995,6 +1023,8 @@ server.tool(
           content.push({ type: 'image', data: fs.readFileSync(p).toString('base64'), mimeType: 'image/jpeg' });
         }
       }
+      // 帧已经直接塞进返回里了，视频和帧文件留着没用，马上删
+      removeQuietly(local, outDir);
       return { content };
     } catch (e) {
       return fail(`录屏失败：${e?.message ?? e}`);
@@ -1290,6 +1320,11 @@ if (process.argv.includes('--selftest')) {
   console.log('devices:\n' + d.out);
   console.log('shot dir:', SHOT_DIR, fs.existsSync(SHOT_DIR) ? '(存在)' : '(将创建)');
   console.log('host:', os.hostname());
+} else if (process.argv.includes('--clean-shots')) {
+  // 手动清：不看时间，phone-mcp 起名的缓存全删
+  console.log(`已清理 ${cleanShotDir(0)} 项截图缓存：${SHOT_DIR}`);
 } else {
+  cleanShotDir();
+  setInterval(() => cleanShotDir(), 3600 * 1000).unref();
   await server.connect(new StdioServerTransport());
 }

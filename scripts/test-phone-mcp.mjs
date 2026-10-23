@@ -128,6 +128,58 @@ await test('phone_macro：一次最多 2000 步', async () => {
   });
 });
 
+await test('截图缓存：启动时清掉超过保留期的，别的文件和符号链接不碰', async () => {
+  const shots = path.join(tmp, 'shots');
+  fs.rmSync(shots, { recursive: true, force: true });
+  fs.mkdirSync(path.join(shots, 'recframes-old'), { recursive: true });
+  const outside = path.join(tmp, 'outside.txt');
+  fs.writeFileSync(outside, 'keep');
+  const files = {
+    oldShot: path.join(shots, 'shot-old.png'), newShot: path.join(shots, 'shot-new.png'),
+    oldRec: path.join(shots, 'rec-old.mp4'), oldFrames: path.join(shots, 'recframes-old'),
+    mine: path.join(shots, 'notes.txt'), link: path.join(shots, 'shot-link.png'),
+  };
+  for (const f of [files.oldShot, files.newShot, files.oldRec, files.mine]) fs.writeFileSync(f, 'x');
+  fs.writeFileSync(path.join(files.oldFrames, 'f01.jpg'), 'x');
+  fs.symlinkSync(outside, files.link);
+  const old = new Date(Date.now() - 48 * 3600 * 1000);
+  for (const f of [files.oldShot, files.oldRec, files.oldFrames, files.mine]) fs.utimesSync(f, old, old);
+  fs.lutimesSync(files.link, old, old);
+  await withServer({ PHONE_SERIAL: 'emulator-5554' }, async (client) => { await client.listTools(); });
+  assert.ok(!fs.existsSync(files.oldShot) && !fs.existsSync(files.oldRec) && !fs.existsSync(files.oldFrames), '超过 24 小时的缓存删掉');
+  assert.ok(fs.existsSync(files.newShot), '新的截图留着');
+  assert.ok(fs.existsSync(files.mine), '不是 phone-mcp 起名的文件不碰');
+  assert.ok(fs.lstatSync(files.link).isSymbolicLink() && fs.readFileSync(outside, 'utf8') === 'keep', '符号链接不跟、不删');
+});
+
+await test('截图缓存：--clean-shots 手动全清', async () => {
+  const shots = path.join(tmp, 'shots');
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [SERVER, '--clean-shots'], { env: { PATH: process.env.PATH, HOME: tmp, PHONE_ADB: fakeAdb, PHONE_SHOT_DIR: shots }, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /已清理 \d+ 项/);
+  assert.deepEqual(fs.readdirSync(shots).sort(), ['notes.txt', 'shot-link.png'], '只剩不归 phone-mcp 管的');
+});
+
+await test('录屏：帧直接返回，视频和帧文件不留在本机', async () => {
+  const shots = path.join(tmp, 'shots-rec');
+  // 假 adb 的 pull 写一个文件出来，假 ffmpeg 往输出目录里写两帧
+  const fakeFfmpeg = path.join(tmp, 'ffmpeg');
+  fs.writeFileSync(fakeFfmpeg, `#!${process.execPath}
+const fs = require('fs'); const path = require('path');
+const out = process.argv[process.argv.length - 1];
+fs.writeFileSync(out.replace('%02d', '01'), 'jpg'); fs.writeFileSync(out.replace('%02d', '02'), 'jpg');
+`, { mode: 0o755 });
+  const adbWithPull = path.join(tmp, 'adb-pull');
+  fs.writeFileSync(adbWithPull, fs.readFileSync(fakeAdb, 'utf8').replace(/process\.exit\(0\);\s*$/, `if (rest[0] === 'pull') { fs.writeFileSync(rest[2], 'mp4'); }\nprocess.exit(0);\n`), { mode: 0o755 });
+  await withServer({ PHONE_SERIAL: 'emulator-5554', PHONE_ADB: adbWithPull, PHONE_SHOT_DIR: shots, FFMPEG_PATH: fakeFfmpeg, PHONE_FFMPEG: fakeFfmpeg }, async (client) => {
+    const r = await client.callTool({ name: 'phone_record_screen', arguments: { seconds: 1, frames: 2 } });
+    assert.equal(r.isError, undefined, textOf(r));
+    assert.equal(r.content.filter((c) => c.type === 'image').length, 2);
+  });
+  assert.deepEqual(fs.readdirSync(shots), [], '录屏的 mp4 和帧都删了');
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${failures ? 'FAILED' : 'ALL PASS'}  tests=${tests} failures=${failures}`);
 if (failures) process.exit(1);

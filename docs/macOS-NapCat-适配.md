@@ -176,6 +176,7 @@ npm run phone:test
 - `ncm_room_say` 里的点击坐标是按作者那台模拟器的分辨率写死的，换任何设备都要重新校准。这和操作系统无关。
 - BlueStacks（蓝叠）在 Mac 上也能用：它的 adb 口是 `127.0.0.1:5555`，`adb connect 127.0.0.1:5555` 之后 `adb devices` 会同时列出 `127.0.0.1:5555` 和 `emulator-5554`，两个是同一台（adb 自动扫到的那个名字重启后不用再 connect）。注意它监听的是 `*:5555`，局域网里的设备也能连上来控制它，不用时在 BlueStacks 设置里关掉 ADB。
 - 打中文要先在模拟器里装 ADBKeyboard 输入法，没装时 `phone_text` 只能打英文。
+- 截图存在本机 `$TMPDIR/phone-mcp-shots/`，phone-mcp 启动时和之后每小时删掉超过 24 小时的（环境变量 `PHONE_SHOT_MAX_AGE_HOURS` 改保留时长）；录屏的视频和帧用完马上删。想立刻清空：`node packages/phone-mcp/src/phone-mcp.js --clean-shots`。模拟器里 `/sdcard/` 下那几个 `_dsh_*` 文件是固定名字、每次覆盖，不会越攒越多，要删就自己删。
 
 **让她在 QQ 上用手机（只给你的私聊）**
 
